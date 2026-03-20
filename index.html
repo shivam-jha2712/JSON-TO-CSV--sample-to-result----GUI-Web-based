@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSON to CSV Converter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-a: #f3f6ff;
+      --bg-b: #ffe8d6;
+      --ink: #1f2937;
+      --muted: #4b5563;
+      --card: rgba(255, 255, 255, 0.86);
+      --stroke: rgba(17, 24, 39, 0.12);
+      --accent: #0f766e;
+      --accent-2: #f97316;
+      --danger: #991b1b;
+      --danger-bg: #fee2e2;
+      --ok: #065f46;
+      --ok-bg: #d1fae5;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 25%, rgba(15, 118, 110, 0.20), transparent 45%),
+        radial-gradient(circle at 85% 75%, rgba(249, 115, 22, 0.20), transparent 45%),
+        linear-gradient(135deg, var(--bg-a), var(--bg-b));
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .panel {
+      width: min(860px, 96vw);
+      background: var(--card);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--stroke);
+      border-radius: 24px;
+      box-shadow: 0 22px 45px rgba(15, 23, 42, 0.16);
+      padding: 26px;
+      animation: float-in 500ms ease;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    p {
+      margin: 0 0 16px;
+      color: var(--muted);
+    }
+
+    .dropzone {
+      border: 2px dashed rgba(15, 118, 110, 0.45);
+      border-radius: 18px;
+      padding: 24px 18px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.75);
+      transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      min-height: 190px;
+      justify-content: center;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      transform: translateY(-2px);
+      border-color: var(--accent-2);
+      background: rgba(255, 255, 255, 0.95);
+    }
+
+    .dropzone strong {
+      display: block;
+      font-size: 1.1rem;
+      margin: 0;
+    }
+
+    .dropzone .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .dropzone .hint {
+      font-size: 0.92rem;
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .file-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+
+    .pick-btn {
+      border: 1px solid rgba(15, 118, 110, 0.22);
+      border-radius: 10px;
+      padding: 8px 12px;
+      background: white;
+      color: #0f3d39;
+      font-family: "DM Mono", monospace;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    .pick-btn:hover {
+      border-color: rgba(249, 115, 22, 0.45);
+    }
+
+    .file-picked {
+      margin-top: 10px;
+      font-family: "DM Mono", monospace;
+      font-size: 0.9rem;
+      color: #0b3f3c;
+      word-break: break-all;
+    }
+
+    .submit-row {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 20px;
+      font-weight: 700;
+      font-size: 1rem;
+      color: white;
+      background: linear-gradient(120deg, var(--accent), #0284c7);
+      cursor: pointer;
+      transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 16px rgba(2, 132, 199, 0.35);
+    }
+
+    button.secondary {
+      background: linear-gradient(120deg, #334155, #0f172a);
+    }
+
+    .message {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .message.error {
+      display: block;
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .message.ok {
+      display: block;
+      background: var(--ok-bg);
+      color: var(--ok);
+    }
+
+    .note {
+      margin-top: 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    @keyframes float-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @media (max-width: 600px) {
+      .panel { padding: 18px; border-radius: 18px; }
+      .dropzone { padding: 18px 12px; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>JSON to CSV Converter</h1>
+    <p>Upload one JSON file and download a CSV named result.csv. No server required.</p>
+
+    <div class="dropzone" id="dropzone">
+      <strong>Drop your JSON file here</strong>
+      <p class="sub">or browse from your computer</p>
+      <label class="pick-btn" for="jsonFile">Choose JSON File</label>
+      <input class="file-input" type="file" id="jsonFile" accept=".json,application/json" required />
+      <div class="hint">Expected format: top-level JSON object/dictionary.</div>
+      <div class="file-picked" id="pickedName"></div>
+    </div>
+
+    <div class="submit-row">
+      <button id="convertBtn" type="button">Convert and Download</button>
+      <button class="secondary" id="resetBtn" type="button">Reset</button>
+    </div>
+
+    <div class="message" id="message"></div>
+    <p class="note">Your data stays in your browser and is never uploaded to a server.</p>
+  </main>
+
+  <script>
+    const input = document.getElementById("jsonFile");
+    const dropzone = document.getElementById("dropzone");
+    const pickedName = document.getElementById("pickedName");
+    const convertBtn = document.getElementById("convertBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const message = document.getElementById("message");
+
+    function showMessage(text, type) {
+      message.className = "message " + type;
+      message.textContent = text;
+    }
+
+    function clearMessage() {
+      message.className = "message";
+      message.textContent = "";
+    }
+
+    function updatePickedName(file) {
+      pickedName.textContent = file ? "Selected: " + file.name : "";
+      clearMessage();
+    }
+
+    function flattenObject(value, parentKey, output) {
+      if (value === null || value === undefined) {
+        output[parentKey] = "";
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        output[parentKey] = JSON.stringify(value);
+        return;
+      }
+
+      if (typeof value !== "object") {
+        output[parentKey] = value;
+        return;
+      }
+
+      const keys = Object.keys(value);
+      if (keys.length === 0) {
+        output[parentKey] = "";
+        return;
+      }
+
+      for (const key of keys) {
+        const nextKey = parentKey ? parentKey + "__" + key : key;
+        flattenObject(value[key], nextKey, output);
+      }
+    }
+
+    function csvEscape(value) {
+      const stringValue = String(value ?? "");
+      if (/[",\n\r]/.test(stringValue)) {
+        return '"' + stringValue.replace(/"/g, '""') + '"';
+      }
+      return stringValue;
+    }
+
+    function convertTopLevelObjectToRows(topLevelObject) {
+      const rows = [];
+      const entries = Object.entries(topLevelObject);
+
+      if (entries.length === 0) {
+        return rows;
+      }
+
+      for (const [key, value] of entries) {
+        if (Array.isArray(value)) {
+          if (value.length === 0) {
+            rows.push({ key: key, value: "" });
+            continue;
+          }
+
+          for (const item of value) {
+            const row = { key: key };
+            if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+              const flattened = {};
+              for (const [itemKey, itemValue] of Object.entries(item)) {
+                flattenObject(itemValue, itemKey, flattened);
+              }
+              Object.assign(row, flattened);
+            } else {
+              row.value = item;
+            }
+            rows.push(row);
+          }
+          continue;
+        }
+
+        if (value !== null && typeof value === "object") {
+          const row = { key: key };
+          for (const [nestedKey, nestedValue] of Object.entries(value)) {
+            flattenObject(nestedValue, nestedKey, row);
+          }
+          rows.push(row);
+          continue;
+        }
+
+        rows.push({ key: key, value: value });
+      }
+
+      return rows;
+    }
+
+    function rowsToCsv(rows) {
+      const fieldnames = [];
+      const seen = new Set();
+
+      for (const row of rows) {
+        for (const key of Object.keys(row)) {
+          if (!seen.has(key)) {
+            seen.add(key);
+            fieldnames.push(key);
+          }
+        }
+      }
+
+      if (fieldnames.length === 0) {
+        return "";
+      }
+
+      const lines = [fieldnames.join(",")];
+      for (const row of rows) {
+        const line = fieldnames.map((name) => csvEscape(row[name]));
+        lines.push(line.join(","));
+      }
+      return lines.join("\r\n");
+    }
+
+    function downloadTextFile(content, fileName, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    }
+
+    async function convertAndDownload() {
+      clearMessage();
+
+      const file = input.files && input.files[0];
+      if (!file) {
+        showMessage("Please select a JSON file.", "error");
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          showMessage("Top-level JSON must be an object/dictionary.", "error");
+          return;
+        }
+
+        const rows = convertTopLevelObjectToRows(data);
+        if (rows.length === 0) {
+          showMessage("JSON was valid but no rows were generated.", "error");
+          return;
+        }
+
+        const csv = rowsToCsv(rows);
+        downloadTextFile(csv, "result.csv", "text/csv;charset=utf-8");
+        showMessage("CSV generated successfully. Download started.", "ok");
+      } catch (error) {
+        showMessage("Invalid JSON: " + error.message, "error");
+      }
+    }
+
+    input.addEventListener("change", () => {
+      updatePickedName(input.files && input.files[0]);
+    });
+
+    dropzone.addEventListener("click", (event) => {
+      if (!event.target.classList.contains("pick-btn")) {
+        input.click();
+      }
+    });
+
+    ["dragenter", "dragover"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropzone.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "drop"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropzone.classList.remove("dragover");
+      });
+    });
+
+    dropzone.addEventListener("drop", (event) => {
+      const files = event.dataTransfer.files;
+      if (files && files.length > 0) {
+        input.files = files;
+        updatePickedName(files[0]);
+      }
+    });
+
+    convertBtn.addEventListener("click", convertAndDownload);
+    resetBtn.addEventListener("click", () => {
+      input.value = "";
+      updatePickedName(null);
+      clearMessage();
+    });
+  </script>
+</body>
+</html>
