@@ -15,9 +15,9 @@ This repo now includes a pure browser app that needs no Python runtime for end u
 For users, the flow is:
 
 1. Open your deployed site URL.
-2. Upload JSON.
+2. Upload one JSON, or upload one ZIP that contains multiple JSON files.
 3. Click convert.
-4. Browser downloads `result.csv`.
+4. Browser downloads `result.csv` (single JSON) or `<your-zip-name>_csv.zip` (ZIP input).
 
 No command line is needed for end users.
 
@@ -64,9 +64,10 @@ Tip: You can run the `.exe` directly from `dist/`; it will automatically detect 
 
 This repo now includes a web-based app that does the same conversion logic:
 
-- Upload your own `.json` file from your computer.
+- Upload one `.json` file from your computer for a single CSV.
+- Or upload one `.zip` file that contains `.json` files for bulk conversion.
 - Click convert.
-- The browser downloads `result.csv` (usually into your Downloads folder).
+- The browser downloads `result.csv` (single JSON) or `<your-zip-name>_csv.zip` (ZIP input).
 
 ### File
 

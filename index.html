@@ -206,14 +206,14 @@
 <body>
   <main class="panel">
     <h1>JSON to CSV Converter</h1>
-    <p>Upload one JSON file and download a CSV named result.csv. No server required.</p>
+    <p>Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files. No server required.</p>
 
     <div class="dropzone" id="dropzone">
-      <strong>Drop your JSON file here</strong>
+      <strong>Drop your JSON or ZIP file here</strong>
       <p class="sub">or browse from your computer</p>
-      <label class="pick-btn" for="jsonFile">Choose JSON File</label>
-      <input class="file-input" type="file" id="jsonFile" accept=".json,application/json" required />
-      <div class="hint">Expected format: top-level JSON object/dictionary.</div>
+      <label class="pick-btn" for="jsonFile">Choose JSON or ZIP</label>
+      <input class="file-input" type="file" id="jsonFile" accept=".json,.zip,application/json,application/zip" required />
+      <div class="hint">JSON: top-level object. ZIP: contains one or more UTF-8 .json files.</div>
       <div class="file-picked" id="pickedName"></div>
     </div>
 
@@ -226,6 +226,7 @@
     <p class="note">Your data stays in your browser and is never uploaded to a server.</p>
   </main>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script>
     const input = document.getElementById("jsonFile");
     const dropzone = document.getElementById("dropzone");
@@ -358,6 +359,10 @@
 
     function downloadTextFile(content, fileName, contentType) {
       const blob = new Blob([content], { type: contentType });
+      downloadBlob(blob, fileName);
+    }
+
+    function downloadBlob(blob, fileName) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -368,35 +373,113 @@
       URL.revokeObjectURL(url);
     }
 
+    function convertJsonTextToCsv(text, sourceName) {
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        throw new Error("Invalid JSON in " + sourceName + ": " + error.message);
+      }
+
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("Top-level JSON in " + sourceName + " must be an object/dictionary.");
+      }
+
+      const rows = convertTopLevelObjectToRows(data);
+      if (rows.length === 0) {
+        throw new Error("JSON was valid but no rows were generated in " + sourceName + ".");
+      }
+
+      return rowsToCsv(rows);
+    }
+
+    async function convertZipAndDownload(file) {
+      if (!window.JSZip) {
+        showMessage("ZIP support failed to load. Please refresh and try again.", "error");
+        return;
+      }
+
+      const zipData = await file.arrayBuffer();
+      let inputZip;
+      try {
+        inputZip = await JSZip.loadAsync(zipData);
+      } catch (error) {
+        showMessage("Uploaded file is not a valid ZIP archive.", "error");
+        return;
+      }
+
+      const jsonEntries = Object.values(inputZip.files).filter((entry) => {
+        return !entry.dir && entry.name.toLowerCase().endsWith(".json");
+      });
+
+      if (jsonEntries.length === 0) {
+        showMessage("ZIP archive does not contain any .json files.", "error");
+        return;
+      }
+
+      const outputZip = new JSZip();
+      const usedNames = new Set();
+
+      for (const entry of jsonEntries) {
+        let text;
+        try {
+          text = await entry.async("string");
+        } catch (error) {
+          showMessage("Could not read file in ZIP: " + entry.name, "error");
+          return;
+        }
+
+        let csv;
+        try {
+          csv = convertJsonTextToCsv(text, entry.name);
+        } catch (error) {
+          showMessage(error.message, "error");
+          return;
+        }
+
+        let csvName = entry.name.replace(/\.json$/i, ".csv");
+        if (usedNames.has(csvName)) {
+          const dotIndex = csvName.lastIndexOf(".");
+          const base = dotIndex >= 0 ? csvName.slice(0, dotIndex) : csvName;
+          const ext = dotIndex >= 0 ? csvName.slice(dotIndex) : "";
+          let suffix = 2;
+          while (usedNames.has(base + "_" + suffix + ext)) {
+            suffix += 1;
+          }
+          csvName = base + "_" + suffix + ext;
+        }
+
+        usedNames.add(csvName);
+        outputZip.file(csvName, csv);
+      }
+
+      const outBlob = await outputZip.generateAsync({ type: "blob" });
+      const baseName = file.name.replace(/\.zip$/i, "") || "converted";
+      downloadBlob(outBlob, baseName + "_csv.zip");
+      showMessage("ZIP converted successfully. Download started.", "ok");
+    }
+
     async function convertAndDownload() {
       clearMessage();
 
       const file = input.files && input.files[0];
       if (!file) {
-        showMessage("Please select a JSON file.", "error");
+        showMessage("Please select a JSON or ZIP file.", "error");
+        return;
+      }
+
+      if (file.name.toLowerCase().endsWith(".zip")) {
+        await convertZipAndDownload(file);
         return;
       }
 
       try {
         const text = await file.text();
-        const data = JSON.parse(text);
-
-        if (!data || typeof data !== "object" || Array.isArray(data)) {
-          showMessage("Top-level JSON must be an object/dictionary.", "error");
-          return;
-        }
-
-        const rows = convertTopLevelObjectToRows(data);
-        if (rows.length === 0) {
-          showMessage("JSON was valid but no rows were generated.", "error");
-          return;
-        }
-
-        const csv = rowsToCsv(rows);
+        const csv = convertJsonTextToCsv(text, file.name || "uploaded JSON");
         downloadTextFile(csv, "result.csv", "text/csv;charset=utf-8");
         showMessage("CSV generated successfully. Download started.", "ok");
       } catch (error) {
-        showMessage("Invalid JSON: " + error.message, "error");
+        showMessage(error.message || "Conversion failed.", "error");
       }
     }
 
