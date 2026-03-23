@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+import os
+import zipfile
 
 from flask import Flask, render_template_string, request, send_file
 
@@ -200,15 +202,15 @@ PAGE_HTML = """
 <body>
   <main class="panel">
     <h1>JSON to CSV Converter</h1>
-    <p>Upload one JSON file and get a CSV download named result.csv.</p>
+    <p>Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files.</p>
 
     <form method="post" enctype="multipart/form-data" id="uploadForm">
       <div class="dropzone" id="dropzone">
-        <strong>Drop your JSON file here</strong>
+        <strong>Drop your JSON or ZIP file here</strong>
         <p class="sub">or browse from your computer</p>
-        <label class="pick-btn" for="jsonFile">Choose JSON File</label>
-        <input class="file-input" type="file" id="jsonFile" name="json_file" accept=".json,application/json" required />
-        <div class="hint">Expected format: top-level JSON object, matching your current converter behavior.</div>
+        <label class="pick-btn" for="jsonFile">Choose JSON or ZIP</label>
+        <input class="file-input" type="file" id="jsonFile" name="json_file" accept=".json,.zip,application/json,application/zip" required />
+        <div class="hint">JSON: top-level object. ZIP: contains one or more UTF-8 .json files.</div>
         <div class="file-picked" id="pickedName"></div>
       </div>
 
@@ -289,6 +291,63 @@ def rows_to_csv_bytes(rows):
     return io.BytesIO(output.getvalue().encode("utf-8"))
 
 
+def build_csv_bytes_from_json_payload(payload, source_name):
+  try:
+    data = json.loads(payload)
+  except json.JSONDecodeError as exc:
+    raise ValueError(f"Invalid JSON in {source_name}: {exc.msg}") from exc
+
+  if not isinstance(data, dict):
+    raise ValueError(f"Top-level JSON in {source_name} must be an object/dictionary.")
+
+  rows = build_rows_from_top_level(data)
+  return rows_to_csv_bytes(rows)
+
+
+def build_csv_zip_from_uploaded_zip(uploaded_name, raw_bytes):
+  zip_input = io.BytesIO(raw_bytes)
+  if not zipfile.is_zipfile(zip_input):
+    raise ValueError("Uploaded file is not a valid ZIP archive.")
+
+  zip_input.seek(0)
+  output_zip = io.BytesIO()
+
+  with zipfile.ZipFile(zip_input, "r") as in_zip, zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as out_zip:
+    json_members = [
+      member for member in in_zip.infolist()
+      if not member.is_dir() and member.filename.lower().endswith(".json")
+    ]
+
+    if not json_members:
+      raise ValueError("ZIP archive does not contain any .json files.")
+
+    used_names = set()
+    for member in json_members:
+      with in_zip.open(member, "r") as source_file:
+        try:
+          payload = source_file.read().decode("utf-8")
+        except UnicodeDecodeError as exc:
+          raise ValueError(f"JSON file must be UTF-8 encoded: {member.filename}") from exc
+
+      csv_bytes = build_csv_bytes_from_json_payload(payload, member.filename)
+      csv_name = os.path.splitext(member.filename)[0] + ".csv"
+
+      # Avoid duplicate output names when ZIP has colliding JSON paths/stems.
+      if csv_name in used_names:
+        base, ext = os.path.splitext(csv_name)
+        suffix = 2
+        while f"{base}_{suffix}{ext}" in used_names:
+          suffix += 1
+        csv_name = f"{base}_{suffix}{ext}"
+
+      used_names.add(csv_name)
+      out_zip.writestr(csv_name, csv_bytes.getvalue())
+
+  output_zip.seek(0)
+  base_name = os.path.splitext(os.path.basename(uploaded_name or "converted"))[0]
+  return output_zip, f"{base_name}_csv.zip"
+
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "GET":
@@ -296,24 +355,41 @@ def home():
 
     uploaded = request.files.get("json_file")
     if uploaded is None or uploaded.filename == "":
-        return render_template_string(PAGE_HTML, error="Please select a JSON file.")
+        return render_template_string(PAGE_HTML, error="Please select a JSON or ZIP file.")
 
     try:
-        payload = uploaded.read().decode("utf-8")
-        data = json.loads(payload)
-    except UnicodeDecodeError:
-        return render_template_string(PAGE_HTML, error="File must be UTF-8 encoded JSON.")
-    except json.JSONDecodeError as exc:
-        return render_template_string(PAGE_HTML, error=f"Invalid JSON: {exc.msg}")
+        raw_bytes = uploaded.read()
+    except Exception:
+        return render_template_string(PAGE_HTML, error="Could not read uploaded file.")
 
-    if not isinstance(data, dict):
-        return render_template_string(
-            PAGE_HTML,
-            error="Top-level JSON must be an object/dictionary, same as your current tool.",
+    if not raw_bytes:
+        return render_template_string(PAGE_HTML, error="Uploaded file is empty.")
+
+    filename = uploaded.filename or ""
+    lowered_name = filename.lower()
+
+    if lowered_name.endswith(".zip"):
+        try:
+            zip_bytes, download_name = build_csv_zip_from_uploaded_zip(filename, raw_bytes)
+        except ValueError as exc:
+            return render_template_string(PAGE_HTML, error=str(exc))
+
+        return send_file(
+            zip_bytes,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=download_name,
         )
 
-    rows = build_rows_from_top_level(data)
-    csv_bytes = rows_to_csv_bytes(rows)
+    try:
+        payload = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return render_template_string(PAGE_HTML, error="File must be UTF-8 encoded JSON.")
+
+    try:
+        csv_bytes = build_csv_bytes_from_json_payload(payload, filename or "uploaded JSON")
+    except ValueError as exc:
+        return render_template_string(PAGE_HTML, error=str(exc))
 
     return send_file(
         csv_bytes,
