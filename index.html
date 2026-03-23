@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>JSON to CSV Converter</title>
+  <title>JSON and CSV Converter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -191,6 +191,54 @@
       color: var(--muted);
     }
 
+    .view-counter {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.14);
+      border: 1px solid rgba(15, 118, 110, 0.24);
+      color: #0f3d39;
+      font-family: "DM Mono", monospace;
+      font-size: 0.9rem;
+    }
+
+    .mode-toggle {
+      display: inline-flex;
+      gap: 8px;
+      margin: 2px 0 14px;
+      padding: 6px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.06);
+      border: 1px solid var(--stroke);
+    }
+
+    .mode-btn {
+      margin: 0;
+      border: 0;
+      border-radius: 9px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #0f172a;
+      background: transparent;
+      cursor: pointer;
+      box-shadow: none;
+    }
+
+    .mode-btn:hover {
+      transform: none;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.75);
+    }
+
+    .mode-btn.active {
+      color: white;
+      background: linear-gradient(120deg, var(--accent), #0284c7);
+    }
+
     @keyframes float-in {
       from { opacity: 0; transform: translateY(10px) scale(0.98); }
       to { opacity: 1; transform: translateY(0) scale(1); }
@@ -205,20 +253,26 @@
 </head>
 <body>
   <main class="panel">
-    <h1>JSON to CSV Converter</h1>
-    <p>Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files. No server required.</p>
+    <h1 id="mainTitle">JSON to CSV Converter</h1>
+    <p id="mainDescription">Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files. No server required.</p>
+    <div class="view-counter">No of Times Used: <span id="viewCount">0</span></div>
+
+    <div class="mode-toggle" role="tablist" aria-label="Conversion mode">
+      <button id="modeJsonToCsv" class="mode-btn active" type="button" role="tab" aria-selected="true">JSON -> CSV</button>
+      <button id="modeCsvToJson" class="mode-btn" type="button" role="tab" aria-selected="false">CSV -> JSON</button>
+    </div>
 
     <div class="dropzone" id="dropzone">
-      <strong>Drop your JSON or ZIP file here</strong>
+      <strong id="dropzoneTitle">Drop your JSON or ZIP file here</strong>
       <p class="sub">or browse from your computer</p>
-      <label class="pick-btn" for="jsonFile">Choose JSON or ZIP</label>
+      <label class="pick-btn" id="pickButtonLabel" for="jsonFile">Choose JSON or ZIP</label>
       <input class="file-input" type="file" id="jsonFile" accept=".json,.zip,application/json,application/zip" required />
-      <div class="hint">JSON: top-level object. ZIP: contains one or more UTF-8 .json files.</div>
+      <div class="hint" id="dropzoneHint">JSON: top-level object. ZIP: contains one or more UTF-8 .json files.</div>
       <div class="file-picked" id="pickedName"></div>
     </div>
 
     <div class="submit-row">
-      <button id="convertBtn" type="button">Convert and Download</button>
+      <button id="convertBtn" type="button">Convert to CSV</button>
       <button class="secondary" id="resetBtn" type="button">Reset</button>
     </div>
 
@@ -234,6 +288,25 @@
     const convertBtn = document.getElementById("convertBtn");
     const resetBtn = document.getElementById("resetBtn");
     const message = document.getElementById("message");
+    const viewCount = document.getElementById("viewCount");
+    const mainTitle = document.getElementById("mainTitle");
+    const mainDescription = document.getElementById("mainDescription");
+    const dropzoneTitle = document.getElementById("dropzoneTitle");
+    const pickButtonLabel = document.getElementById("pickButtonLabel");
+    const dropzoneHint = document.getElementById("dropzoneHint");
+    const modeJsonToCsvBtn = document.getElementById("modeJsonToCsv");
+    const modeCsvToJsonBtn = document.getElementById("modeCsvToJson");
+
+    let currentMode = "json-to-csv";
+
+    function incrementLocalViewCount() {
+      const storageKey = "site_view_count";
+      const existing = Number.parseInt(localStorage.getItem(storageKey) || "0", 10);
+      const safeExisting = Number.isFinite(existing) && existing >= 0 ? existing : 0;
+      const nextValue = safeExisting + 1;
+      localStorage.setItem(storageKey, String(nextValue));
+      viewCount.textContent = String(nextValue);
+    }
 
     function showMessage(text, type) {
       message.className = "message " + type;
@@ -248,6 +321,34 @@
     function updatePickedName(file) {
       pickedName.textContent = file ? "Selected: " + file.name : "";
       clearMessage();
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+
+      const isJsonToCsv = mode === "json-to-csv";
+
+      mainTitle.textContent = isJsonToCsv ? "JSON to CSV Converter" : "CSV to JSON Converter";
+      mainDescription.textContent = isJsonToCsv
+        ? "Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files. No server required."
+        : "Upload one CSV file and download result.json (array of objects). No server required.";
+      dropzoneTitle.textContent = isJsonToCsv ? "Drop your JSON or ZIP file here" : "Drop your CSV file here";
+      pickButtonLabel.textContent = isJsonToCsv ? "Choose JSON or ZIP" : "Choose CSV";
+      dropzoneHint.textContent = isJsonToCsv
+        ? "JSON: top-level object. ZIP: contains one or more UTF-8 .json files."
+        : "CSV: first row should be header names; output will be a JSON array of rows.";
+      convertBtn.textContent = isJsonToCsv ? "Convert to CSV" : "Convert to JSON";
+      input.accept = isJsonToCsv
+        ? ".json,.zip,application/json,application/zip"
+        : ".csv,text/csv,application/vnd.ms-excel";
+
+      modeJsonToCsvBtn.classList.toggle("active", isJsonToCsv);
+      modeCsvToJsonBtn.classList.toggle("active", !isJsonToCsv);
+      modeJsonToCsvBtn.setAttribute("aria-selected", String(isJsonToCsv));
+      modeCsvToJsonBtn.setAttribute("aria-selected", String(!isJsonToCsv));
+
+      input.value = "";
+      updatePickedName(null);
     }
 
     function flattenObject(value, parentKey, output) {
@@ -393,6 +494,65 @@
       return rowsToCsv(rows);
     }
 
+    function parseCsvLine(line) {
+      const values = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i += 1) {
+        const char = line[i];
+
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+          continue;
+        }
+
+        if (char === "," && !inQuotes) {
+          values.push(current);
+          current = "";
+          continue;
+        }
+
+        current += char;
+      }
+
+      values.push(current);
+      return values;
+    }
+
+    function convertCsvTextToJson(text, sourceName) {
+      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const rawLines = normalized.split("\n");
+      const nonEmptyLines = rawLines.filter((line) => line.trim().length > 0);
+
+      if (nonEmptyLines.length === 0) {
+        throw new Error("CSV file " + sourceName + " is empty.");
+      }
+
+      const headers = parseCsvLine(nonEmptyLines[0]).map((header) => header.trim());
+      if (headers.length === 0 || headers.every((header) => header === "")) {
+        throw new Error("CSV file " + sourceName + " must have header columns in the first row.");
+      }
+
+      const rows = [];
+      for (let i = 1; i < nonEmptyLines.length; i += 1) {
+        const values = parseCsvLine(nonEmptyLines[i]);
+        const row = {};
+        for (let col = 0; col < headers.length; col += 1) {
+          const key = headers[col] || "column_" + (col + 1);
+          row[key] = values[col] ?? "";
+        }
+        rows.push(row);
+      }
+
+      return JSON.stringify(rows, null, 2);
+    }
+
     async function convertZipAndDownload(file) {
       if (!window.JSZip) {
         showMessage("ZIP support failed to load. Please refresh and try again.", "error");
@@ -464,7 +624,24 @@
 
       const file = input.files && input.files[0];
       if (!file) {
-        showMessage("Please select a JSON or ZIP file.", "error");
+        showMessage(currentMode === "json-to-csv" ? "Please select a JSON or ZIP file." : "Please select a CSV file.", "error");
+        return;
+      }
+
+      if (currentMode === "csv-to-json") {
+        if (!file.name.toLowerCase().endsWith(".csv")) {
+          showMessage("Please select a CSV file in CSV -> JSON mode.", "error");
+          return;
+        }
+
+        try {
+          const text = await file.text();
+          const jsonText = convertCsvTextToJson(text, file.name || "uploaded CSV");
+          downloadTextFile(jsonText, "result.json", "application/json;charset=utf-8");
+          showMessage("JSON generated successfully. Download started.", "ok");
+        } catch (error) {
+          showMessage(error.message || "Conversion failed.", "error");
+        }
         return;
       }
 
@@ -516,11 +693,16 @@
     });
 
     convertBtn.addEventListener("click", convertAndDownload);
+    modeJsonToCsvBtn.addEventListener("click", () => setMode("json-to-csv"));
+    modeCsvToJsonBtn.addEventListener("click", () => setMode("csv-to-json"));
     resetBtn.addEventListener("click", () => {
       input.value = "";
       updatePickedName(null);
       clearMessage();
     });
+
+    setMode("json-to-csv");
+    incrementLocalViewCount();
   </script>
 </body>
 </html>
