@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import threading
 import zipfile
 
 from flask import Flask, render_template_string, request, send_file
@@ -10,6 +11,10 @@ from json_to_csv_converter import build_rows_from_top_level
 
 
 app = Flask(__name__)
+
+
+VIEW_COUNT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "view_count.json")
+VIEW_COUNT_LOCK = threading.Lock()
 
 
 PAGE_HTML = """
@@ -187,6 +192,20 @@ PAGE_HTML = """
       color: var(--muted);
     }
 
+    .view-counter {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.14);
+      border: 1px solid rgba(15, 118, 110, 0.24);
+      color: #0f3d39;
+      font-family: "DM Mono", monospace;
+      font-size: 0.9rem;
+    }
+
     @keyframes float-in {
       from { opacity: 0; transform: translateY(10px) scale(0.98); }
       to { opacity: 1; transform: translateY(0) scale(1); }
@@ -203,6 +222,7 @@ PAGE_HTML = """
   <main class="panel">
     <h1>JSON to CSV Converter</h1>
     <p>Upload one JSON for result.csv, or upload a ZIP of JSON files to get a ZIP of same-named CSV files.</p>
+    <div class="view-counter">Views: {{ view_count }}</div>
 
     <form method="post" enctype="multipart/form-data" id="uploadForm">
       <div class="dropzone" id="dropzone">
@@ -270,6 +290,40 @@ PAGE_HTML = """
 </body>
 </html>
 """
+
+
+def load_view_count_from_disk():
+  if not os.path.isfile(VIEW_COUNT_FILE):
+    return 0
+
+  try:
+    with open(VIEW_COUNT_FILE, "r", encoding="utf-8") as file_obj:
+      payload = json.load(file_obj)
+  except (OSError, json.JSONDecodeError):
+    return 0
+
+  value = payload.get("count", 0) if isinstance(payload, dict) else 0
+  if isinstance(value, int) and value >= 0:
+    return value
+  return 0
+
+
+def save_view_count_to_disk(count):
+  with open(VIEW_COUNT_FILE, "w", encoding="utf-8") as file_obj:
+    json.dump({"count": count}, file_obj)
+
+
+def increment_view_count():
+  with VIEW_COUNT_LOCK:
+    current = load_view_count_from_disk()
+    next_count = current + 1
+    save_view_count_to_disk(next_count)
+    return next_count
+
+
+def get_current_view_count():
+  with VIEW_COUNT_LOCK:
+    return load_view_count_from_disk()
 
 
 def rows_to_csv_bytes(rows):
@@ -351,45 +405,65 @@ def build_csv_zip_from_uploaded_zip(uploaded_name, raw_bytes):
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "GET":
-        return render_template_string(PAGE_HTML, error=None)
+        return render_template_string(PAGE_HTML, error=None, view_count=increment_view_count())
 
     uploaded = request.files.get("json_file")
     if uploaded is None or uploaded.filename == "":
-        return render_template_string(PAGE_HTML, error="Please select a JSON or ZIP file.")
+        return render_template_string(
+            PAGE_HTML,
+            error="Please select a JSON or ZIP file.",
+            view_count=get_current_view_count(),
+        )
 
     try:
         raw_bytes = uploaded.read()
     except Exception:
-        return render_template_string(PAGE_HTML, error="Could not read uploaded file.")
+        return render_template_string(
+            PAGE_HTML,
+            error="Could not read uploaded file.",
+            view_count=get_current_view_count(),
+        )
 
     if not raw_bytes:
-        return render_template_string(PAGE_HTML, error="Uploaded file is empty.")
+        return render_template_string(
+            PAGE_HTML,
+            error="Uploaded file is empty.",
+            view_count=get_current_view_count(),
+        )
 
     filename = uploaded.filename or ""
     lowered_name = filename.lower()
 
     if lowered_name.endswith(".zip"):
-        try:
-            zip_bytes, download_name = build_csv_zip_from_uploaded_zip(filename, raw_bytes)
-        except ValueError as exc:
-            return render_template_string(PAGE_HTML, error=str(exc))
-
-        return send_file(
-            zip_bytes,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=download_name,
+      try:
+        zip_bytes, download_name = build_csv_zip_from_uploaded_zip(filename, raw_bytes)
+      except ValueError as exc:
+        return render_template_string(
+          PAGE_HTML,
+          error=str(exc),
+          view_count=get_current_view_count(),
         )
+
+      return send_file(
+        zip_bytes,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_name,
+      )
 
     try:
         payload = raw_bytes.decode("utf-8")
     except UnicodeDecodeError:
-        return render_template_string(PAGE_HTML, error="File must be UTF-8 encoded JSON.")
+        return render_template_string(
+            PAGE_HTML,
+            error="File must be UTF-8 encoded JSON.",
+            view_count=get_current_view_count(),
+        )
 
     try:
         csv_bytes = build_csv_bytes_from_json_payload(payload, filename or "uploaded JSON")
     except ValueError as exc:
-        return render_template_string(PAGE_HTML, error=str(exc))
+      return render_template_string(PAGE_HTML, error=str(exc), view_count=get_current_view_count())
 
     return send_file(
         csv_bytes,
